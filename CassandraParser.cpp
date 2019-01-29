@@ -413,13 +413,14 @@ bool CassandraParser::iterator::get_next_key(std::string & key)
 bool CassandraParser::iterator::next_record(DatabaseRow & row)
 {
     size_t * matches = (size_t *)alloca(sizeof(size_t) * m_tables.size());
-    size_t n_matches = find_first_row_matches(matches);
+    const size_t original_n_matches = find_first_row_matches(matches);
 
-    if (n_matches == 0)
+    if (original_n_matches == 0)
     {
         return false;
     }
 
+    size_t n_matches = original_n_matches;
 #ifdef DEBUG
     assert(m_last_key.empty() || m_parser.m_pPartitioner->compare_token(m_tables[matches[0]]->next_token(), m_tables[matches[0]]->next_key(), m_last_token, m_last_key) >= 0);
     memcpy(&m_last_token, &m_tables[matches[0]]->next_token(), sizeof(Token));
@@ -442,6 +443,22 @@ bool CassandraParser::iterator::next_record(DatabaseRow & row)
                                                        marked_for_deletion < this_deletion))
         {
             marked_for_deletion = this_deletion;
+        }
+    }
+
+    // Sometimes a row might not have any columns.
+    for (size_t i = 0; i < n_matches;)
+    {
+        const size_t index = matches[i];
+        if (m_tables[index]->has_columns())
+        {
+            i++;
+        }
+        else
+        {
+            --n_matches;
+            matches[i] = matches[n_matches];
+            matches[n_matches] = index;
         }
     }
 
@@ -484,17 +501,24 @@ bool CassandraParser::iterator::next_record(DatabaseRow & row)
             {
                 // No more columns, remove from set of row matches (this is a no-op when removing the last table)
                 size_t * position = std::find(matches, matches + n_matches, index);
-                *position = matches[--n_matches];
-
-                // And prepare the next row so its pointing in the right place
-                if (m_tables[index]->read_row(m_parser.m_pPartitioner))
-                {
-                    // EOF
-                    deactivate_table(index);
-                }
+                --n_matches;
+                *position = matches[n_matches];
+                matches[n_matches] = index;
             }
         }
     }
+
+    for (size_t i = 0; i < original_n_matches; i++)
+    {
+        const size_t index = matches[i];
+        // And prepare the next row so its pointing in the right place
+        if (m_tables[index]->read_row(m_parser.m_pPartitioner))
+        {
+            // EOF
+            deactivate_table(index);
+        }
+    }
+
     ++m_cassandraReadRecords;
 
     // If an entry has been deleted and has not been written to since, don't bother returning it.

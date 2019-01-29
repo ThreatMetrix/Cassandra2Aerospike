@@ -67,6 +67,7 @@ public:
     bool open();
     void close();
     bool find_partition_in_summary(int64_t & found, const Partitioner & partitioner, const std::string & prefix, const CassandraParser::Token & first_token, const std::string & first_key);
+    bool has_columns() const { return fsm != READ_ROW; }
 
     const CassandraParser::Token & next_token() const { return next_token_value; }
     const std::string & next_key() const { return next_key_value; }
@@ -120,12 +121,18 @@ class NewSStable : public SStable
         EXTENSION_FLAG       = 0x80
     };
 
+    enum ExtendedFlags
+    {
+        IS_STATIC            = 0x01
+    };
+
     bool at_end_of_partition;
     int64_t partition_marked_for_deletion;
     uint64_t row_timestamp;
     uint64_t row_ttl;
     std::vector<bool> columns_present;
     size_t this_column_index;
+    bool is_static;
     static void decode_column_subset(Buffer & buf, std::vector<bool> & subset, size_t n_columns);
     void next_column();
     void read_clustering_columns(size_t size);

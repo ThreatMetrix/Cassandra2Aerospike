@@ -492,7 +492,7 @@ void NewSStable::read_clustering_columns(size_t size)
         {
             if ((clusteringHeader & (3 << shift)) == 0)
             {
-                size_t skip = config.schema.get_column_size(clusteringColumn, *data_buffer);
+                size_t skip = TableSchema::get_column_size(config.schema.clustering[clusteringColumn], *data_buffer);
                 data_buffer->skip_bytes(skip);
             }
         }
@@ -522,10 +522,8 @@ bool NewSStable::read_row(const Partitioner * pPartitioner)
         return read_row(pPartitioner);
     }
 
-    if (flags & EXTENSION_FLAG)
-    {
-        data_buffer->skip_bytes(1); // Extended flag
-    }
+    uint8_t extended_flags = (flags & EXTENSION_FLAG) ? data_buffer->read_byte() : 0;
+    is_static = (extended_flags & IS_STATIC) != 0;
 
     if (flags & IS_MARKER)
     {
@@ -541,7 +539,10 @@ bool NewSStable::read_marker()
 {
     uint8_t type = data_buffer->read_byte();
     uint16_t size = data_buffer->read_short();
-    read_clustering_columns(size);
+    if (!is_static)
+    {
+        read_clustering_columns(size);
+    }
 
     data_buffer->read_unsigned_vint(); // rowsize (not needed)
     data_buffer->read_unsigned_vint(); // previous unfiltered size (not needed)
@@ -568,7 +569,10 @@ bool NewSStable::read_marker()
 
 bool NewSStable::read_normal_row(uint8_t flags)
 {
-    read_clustering_columns(config.schema.clustering.size());
+    if (!is_static)
+    {
+        read_clustering_columns(config.schema.clustering.size());
+    }
 
     data_buffer->read_unsigned_vint(); // rowsize (not needed)
     data_buffer->read_unsigned_vint(); // previous unfiltered size (not needed)
@@ -595,13 +599,14 @@ bool NewSStable::read_normal_row(uint8_t flags)
         row_marked_for_deletion = partition_marked_for_deletion;
     }
 
+    const std::vector<std::pair<std::string, TableSchema::ColumnFormat>> & columns = is_static ? config.schema.static_columns : config.schema.regular_columns;
     if (flags & HAS_ALL_COLUMNS)
     {
-        columns_present.assign(config.schema.regular_columns.size(), true);
+        columns_present.assign(columns.size(), true);
     }
     else
     {
-        decode_column_subset(*data_buffer, columns_present, config.schema.regular_columns.size());
+        decode_column_subset(*data_buffer, columns_present, columns.size());
     }
 
     this_column_index = 0;
@@ -637,7 +642,9 @@ bool NewSStable::read_column()
         next_column_info.name.clear();
         return false;
     }
-    next_column_info.name = config.schema.regular_columns[this_column_index].first;
+
+    const std::vector<std::pair<std::string, TableSchema::ColumnFormat>> & columns = is_static ? config.schema.static_columns : config.schema.regular_columns;
+    next_column_info.name = columns[this_column_index].first;
 
     uint8_t flags = data_buffer->read_byte();
     if (flags & USE_ROW_TIMESTAMP_MASK)
@@ -683,7 +690,8 @@ bool NewSStable::read_column_data(std::string & data)
     }
     else
     {
-        size_t size = config.schema.get_column_size(this_column_index, *data_buffer);
+        const std::vector<std::pair<std::string, TableSchema::ColumnFormat>> & columns = is_static ? config.schema.static_columns : config.schema.regular_columns;
+        size_t size = config.schema.get_column_size(columns[this_column_index].second, *data_buffer);
         const uint8_t * bytes = data_buffer->read_bytes(size);
         if (bytes)
         {

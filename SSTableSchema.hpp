@@ -36,13 +36,14 @@ struct TableSchema
         COLUMN_BOOL,
         COLUMN_EMPTY,
         COLUMN_TIMESTAMP,
+        COLUMN_COUNTER,
         COLUMN_UNKNOWN
     };
 
     void parse(Buffer & buf);
     static void read_columns(Buffer & buf, std::vector<std::pair<std::string, ColumnFormat>> & columns);
     static ColumnFormat read_column_format(Buffer & buf);
-    size_t get_column_size(size_t column, Buffer & buf) const;
+    static size_t get_column_size(ColumnFormat column, Buffer & buf);
 
     uint64_t minTimestamp;
     uint64_t minTTL;

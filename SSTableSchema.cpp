@@ -37,6 +37,10 @@ TableSchema::ColumnFormat TableSchema::read_column_format(Buffer & buf)
     {
         return COLUMN_TEXT;
     }
+    if (std::strcmp(class_name, "CounterColumnType") == 0)
+    {
+        return COLUMN_COUNTER;
+    }
     if (std::strcmp(class_name, "LongType") == 0)
     {
         return COLUMN_LONG;
@@ -72,13 +76,13 @@ TableSchema::ColumnFormat TableSchema::read_column_format(Buffer & buf)
     return COLUMN_UNKNOWN;
 }
 
-size_t TableSchema::get_column_size(size_t column, Buffer & buf) const
+size_t TableSchema::get_column_size(TableSchema::ColumnFormat format, Buffer & buf)
 {
-    TableSchema::ColumnFormat format = regular_columns[column].second;
     switch(format)
     {
         case TableSchema::COLUMN_TEXT:
         case TableSchema::COLUMN_UNKNOWN:
+        case TableSchema::COLUMN_COUNTER:
             return buf.read_unsigned_vint();
 
         case TableSchema::COLUMN_INT32:
