@@ -12,6 +12,21 @@ Features:
 * Fast resume mode:
   Export may start on any key. Upon suspending, the utility will print out the next partition key to resume on next time.
 
+Requirements:
+* Cmake 3.1 or above
+* A working C++ compiler
+* Aerospike Client libraries (with libev) https://www.aerospike.com/download/client/
+* Libev
+* Snappy
+* LZ4
+* ZLib
+* OpenSSL
+* Pthreads
+
+Building (Linux):
+$ cmake .
+$ make
+
 Todo:
 * Handle clustering columns:
   The Cassandra parser does not understand clustering columns beyond knowing how to ignore them. The behaviour when encountering them is different depending on version.
