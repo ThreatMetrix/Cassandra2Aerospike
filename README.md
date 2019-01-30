@@ -14,7 +14,7 @@ Features:
 
 Requirements:
 * Cmake 3.1 or above
-* A working C++ compiler
+* A working C++11 compiler
 * Aerospike Client libraries (with libev) https://www.aerospike.com/download/client/
 * Libev
 * Snappy
