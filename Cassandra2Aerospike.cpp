@@ -375,14 +375,16 @@ static int do_transfer(aerospike & as, CassandraParser::iterator & iter, unsigne
 
     size_t total_existing = 0;
     size_t total_failed = 0;
+    size_t total_expired = 0;
     for (const AerospikeWriter & writer : writers)
     {
         total_existing += writer.get_existing_entries();
         total_failed += writer.get_failed_entries();
+        total_expired += writer.get_expired_entries();
     }
 
-    printf("Exported %lu records, failed to write %zu records, skipped %lu deleted records, skipped %lu records that were already in Aerospike.\n",
-           iter.getCassandraReadRecords() - total_existing - total_failed, total_failed, iter.getSkippedRecords(), total_existing);
+    printf("Exported %lu records, failed to write %zu records, skipped %lu deleted/expired records, skipped %lu records that were already in Aerospike.\n",
+           iter.getCassandraReadRecords() - total_existing - total_failed - total_expired, total_failed, iter.getSkippedRecords() + total_expired, total_existing);
     std::string first_unsent;
     if (AerospikeWriter::get_first_unsent_record(first_unsent, writers) ||
         iter.get_next_key(first_unsent))

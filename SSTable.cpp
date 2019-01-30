@@ -397,20 +397,23 @@ bool OldSStable::read_column()
         return false;
     }
 
-    while (next_column_info.name.length() >= 2)
+    // This might be a compound path or a clustering path. As we support neither, just take the name itself.
+    for (size_t buffer_len = next_column_info.name.length(); buffer_len >= 2; )
     {
-        // This might be a compound column name or a partitioned column name. As we support neither, just take the name itself.
-        const uint8_t * bytes = reinterpret_cast<const uint8_t *>(next_column_info.name.data());
-        uint16_t len = (bytes[0] << 8) | bytes[1];
-        if (next_column_info.name.length() > len + 3u)
+        const size_t advanced = next_column_info.name.length() - buffer_len;
+        const uint8_t * bytes = reinterpret_cast<const uint8_t *>(next_column_info.name.data()) + advanced;
+
+        const uint16_t len = (bytes[0] << 8) | bytes[1];
+        if (buffer_len > len + 3u)
         {
-            next_column_info.name = next_column_info.name.substr(len + 3u);
+            // TODO: next_column_info.name.substr(advanced + 2u, len) is the path element
+            buffer_len -= len + 3u;
         }
         else
         {
-            if (next_column_info.name.length() == len + 3u)
+            if (buffer_len == len + 3u)
             {
-                next_column_info.name = next_column_info.name.substr(2, len);
+                next_column_info.name = next_column_info.name.substr(advanced + 2u, len);
             }
             break;
         }

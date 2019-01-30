@@ -48,6 +48,7 @@ class AerospikeWriter
     pthread_cond_t *check_status;
     size_t existing_entries;
     size_t failed_entries;
+    size_t expired_entries;
     static bool s_terminated;
 
 public:
@@ -70,6 +71,7 @@ public:
     check_status(cs),
     existing_entries(0),
     failed_entries(0),
+    expired_entries(0),
     writerStatus(STALLED)
     {
         strncpy(aero_namespace, ns, sizeof(aero_namespace));
@@ -114,6 +116,16 @@ public:
     size_t get_requests_in_flight() const
     {
         return requests_in_flight;
+    }
+
+    void increment_expired_entries()
+    {
+        expired_entries++;
+    }
+
+    size_t get_expired_entries() const
+    {
+        return expired_entries;
     }
 
     static void set_prohibit_eternal_records();

@@ -118,7 +118,13 @@ public:
     bool handle_error_and_retry(as_error* err);
     static void write_listener(as_error* err, void* udata, as_event_loop* event_loop);
     static void pipeline_listener(void* udata, as_event_loop* event_loop);
-    bool write(as_event_loop* event_loop, aerospike & connection, const as_namespace & ns, const as_set & set,
+    enum WriteReturnValue
+    {
+        WRITE_SUCCESS,
+        WRITE_FAIL,
+        WRITE_ALREADY_EXPIRED
+    };
+    WriteReturnValue write(as_event_loop* event_loop, aerospike & connection, const as_namespace & ns, const as_set & set,
                as_error & err);
     DatabaseRowWithWriter * next() { return next_node; }
 
@@ -207,8 +213,7 @@ void DatabaseRowWithWriter::pipeline_listener(void* udata, as_event_loop* event_
 
 
 // Write whatever is in this row to the database.
-bool DatabaseRowWithWriter::write(as_event_loop* event_loop, aerospike & connection, const as_namespace & ns, const as_set & set,
-                                  as_error & err)
+DatabaseRowWithWriter::WriteReturnValue DatabaseRowWithWriter::write(as_event_loop* event_loop, aerospike & connection, const as_namespace & ns, const as_set & set, as_error & err)
 {
     as_key aerospike_key;
     as_key_init_rawp(&aerospike_key, ns, set,
@@ -235,9 +240,19 @@ bool DatabaseRowWithWriter::write(as_event_loop* event_loop, aerospike & connect
         {
             rec.ttl = expiry - now;
         }
+        else
+        {
+            as_record_destroy(&rec);
+            as_key_destroy(&aerospike_key);
+            return WRITE_ALREADY_EXPIRED;
+        }
     }
 
-    return aerospike_key_put_async(&connection, &err, NULL, &aerospike_key, &rec, write_listener, this, event_loop, pipeline_listener) == AEROSPIKE_OK;
+    as_status status = aerospike_key_put_async(&connection, &err, NULL, &aerospike_key, &rec, write_listener, this, event_loop, pipeline_listener);
+
+    as_record_destroy(&rec);
+    as_key_destroy(&aerospike_key);
+    return status == AEROSPIKE_OK ? WRITE_SUCCESS : WRITE_FAIL;
 }
 
 bool AerospikeWriter::s_terminated = false;
@@ -341,21 +356,27 @@ try_another_row:
     writerStatus = RUNNING;
 
     as_error err;
-    if (!row->write(event_loop, as, aero_namespace, aero_set, err))
+    switch(row->write(event_loop, as, aero_namespace, aero_set, err))
     {
-        if (row->handle_error_and_retry(&err))
-        {
-            queue_row_for_resend(row);
-            return false;
-        }
-        else
-        {
-            return_row_to_pool(row);
-            // Explicitly return to the top (instead of tail recursion) to prevent possible stack overflow.
-            goto try_another_row;
-        }
+        case DatabaseRowWithWriter::WRITE_SUCCESS:
+            return true;
+
+        case DatabaseRowWithWriter::WRITE_FAIL:
+            if (row->handle_error_and_retry(&err))
+            {
+                queue_row_for_resend(row);
+                return false;
+            }
+            break;
+
+        case DatabaseRowWithWriter::WRITE_ALREADY_EXPIRED:
+            increment_expired_entries();
+            break;
     }
-    return true;
+
+    return_row_to_pool(row);
+    // Explicitly return to the top (instead of tail recursion) to prevent possible stack overflow.
+    goto try_another_row;
 }
 
 // When there are queries in flight, status should always be RUNNING. Otherwise it might be FINISHED or STALLED
